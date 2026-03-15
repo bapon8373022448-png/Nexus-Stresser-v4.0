@@ -32,6 +32,9 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { generateWelcomeVoice, transcribeAudio } from './services/gemini';
+import { db, auth } from './firebase';
+  import { collection, addDoc, updateDoc, doc, getDocs, query, orderBy, onSnapshot, setDoc, deleteDoc } from 'firebase/firestore';
+import { signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from 'firebase/auth';
 
 interface LogEntry {
   id: string;
@@ -46,18 +49,27 @@ interface HistoryEntry {
   timestamp: string;
   status: 'COMPLETED' | 'ABORTED' | 'IN_PROGRESS';
   count: number;
+  sessionId?: string;
+  userAgent?: string;
 }
 
 export default function App() {
   const [isBooted, setIsBooted] = useState(false);
   const [activeTab, setActiveTab] = useState<'stresser' | 'admin'>('stresser');
-  const [isAdminAuthorized, setIsAdminAuthorized] = useState(() => {
-    return sessionStorage.getItem('nexus_admin_authorized') === 'true';
-  });
-  const [adminPassword, setAdminPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
+  const [isAdminAuthorized, setIsAdminAuthorized] = useState(false);
+  const [adminUser, setAdminUser] = useState<any>(null);
   const [loginError, setLoginError] = useState('');
   const [isAuthenticating, setIsAuthenticating] = useState(false);
+  const [globalHistory, setGlobalHistory] = useState<HistoryEntry[]>([]);
+  
+  const [sessionId] = useState(() => {
+    let sid = localStorage.getItem('nexus_session_id');
+    if (!sid) {
+      sid = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+      localStorage.setItem('nexus_session_id', sid);
+    }
+    return sid;
+  });
 
   const [phoneNumber, setPhoneNumber] = useState('');
   const [isBombing, setIsBombing] = useState(false);
@@ -90,28 +102,62 @@ export default function App() {
     localStorage.setItem('nexus_stresser_history', JSON.stringify(history));
   }, [history]);
 
-  const handleAdminLogin = (e: React.FormEvent) => {
+  // Listen to auth state
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user && user.email === 'bapon8373022448@gmail.com') {
+        setIsAdminAuthorized(true);
+        setAdminUser(user);
+      } else {
+        setIsAdminAuthorized(false);
+        setAdminUser(null);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Fetch global history if admin
+  useEffect(() => {
+    if (isAdminAuthorized) {
+      const q = query(collection(db, 'history'), orderBy('timestamp', 'desc'));
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const historyData: HistoryEntry[] = [];
+        snapshot.forEach((doc) => {
+          historyData.push({ id: doc.id, ...doc.data() } as HistoryEntry);
+        });
+        setGlobalHistory(historyData);
+      }, (error) => {
+        console.error("Error fetching history:", error);
+      });
+      return () => unsubscribe();
+    }
+  }, [isAdminAuthorized]);
+
+  const handleAdminLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsAuthenticating(true);
     setLoginError('');
 
-    setTimeout(() => {
-      if (adminPassword === 'Bapon@8373') {
-        setIsAdminAuthorized(true);
-        sessionStorage.setItem('nexus_admin_authorized', 'true');
+    try {
+      const provider = new GoogleAuthProvider();
+      const result = await signInWithPopup(auth, provider);
+      if (result.user.email === 'bapon8373022448@gmail.com') {
         addLog('ADMIN ACCESS GRANTED', 'success');
       } else {
-        setLoginError('INVALID ACCESS KEY');
+        await signOut(auth);
+        setLoginError('UNAUTHORIZED EMAIL ADDRESS');
         addLog('UNAUTHORIZED ADMIN ACCESS ATTEMPT', 'error');
       }
+    } catch (error: any) {
+      setLoginError(error.message || 'AUTHENTICATION FAILED');
+      addLog('ADMIN AUTHENTICATION ERROR', 'error');
+    } finally {
       setIsAuthenticating(false);
-    }, 800);
+    }
   };
 
-  const handleLogout = () => {
-    setIsAdminAuthorized(false);
-    sessionStorage.removeItem('nexus_admin_authorized');
-    setAdminPassword('');
+  const handleLogout = async () => {
+    await signOut(auth);
     addLog('ADMIN SESSION TERMINATED', 'warning');
   };
 
@@ -195,7 +241,7 @@ export default function App() {
     }
   }, [logs]);
 
-  const startBombing = () => {
+  const startBombing = async () => {
     if (!phoneNumber || phoneNumber.length !== 10) {
       addLog('INVALID TARGET: 10-digit Indian phone number required', 'error');
       return;
@@ -205,9 +251,11 @@ export default function App() {
     const newEntry: HistoryEntry = {
       id: newHistoryId,
       phoneNumber,
-      timestamp: new Date().toLocaleString(),
+      timestamp: new Date().toISOString(),
       status: 'IN_PROGRESS',
-      count: 0
+      count: 0,
+      sessionId,
+      userAgent: navigator.userAgent
     };
 
     setHistory(prev => [newEntry, ...prev].slice(0, 50));
@@ -216,12 +264,19 @@ export default function App() {
     setProgress(0);
     setCount(0);
     setLogs([]);
-    addLog(`INITIALIZING ATTACK VECTOR: ${phoneNumber}`, 'warning');
+    addLog(`INITIALIZING ATTACK VECTOR: +91 ${phoneNumber}`, 'warning');
     addLog('BYPASSING FIREWALL PROTOCOLS...', 'info');
     addLog('ESTABLISHING SECURE TUNNEL...', 'success');
+    
+    // Save to Firestore
+    try {
+      await setDoc(doc(db, 'history', newHistoryId), newEntry);
+    } catch (error) {
+      console.error("Error saving to Firestore:", error);
+    }
   };
 
-  const stopBombing = () => {
+  const stopBombing = async () => {
     setIsBombing(false);
     if (currentHistoryId) {
       setHistory(prev => prev.map(entry => 
@@ -229,13 +284,41 @@ export default function App() {
           ? { ...entry, status: 'ABORTED', count } 
           : entry
       ));
+      
+      // Update Firestore
+      try {
+        const entryToUpdate = history.find(e => e.id === currentHistoryId);
+        if (entryToUpdate) {
+          await updateDoc(doc(db, 'history', currentHistoryId), {
+            status: 'ABORTED',
+            count,
+            sessionId,
+            phoneNumber: entryToUpdate.phoneNumber,
+            timestamp: entryToUpdate.timestamp
+          });
+        }
+      } catch (error) {
+        console.error("Error updating Firestore:", error);
+      }
     }
     addLog('PROCESS TERMINATED BY USER', 'warning');
   };
 
-  const clearHistory = () => {
-    setHistory([]);
-    addLog('HISTORY DATABASE PURGED', 'info');
+  const clearHistory = async () => {
+    if (isAdminAuthorized) {
+      try {
+        const q = query(collection(db, 'history'));
+        const snapshot = await getDocs(q);
+        const deletePromises = snapshot.docs.map(doc => deleteDoc(doc.ref));
+        await Promise.all(deletePromises);
+        addLog('GLOBAL HISTORY DATABASE PURGED', 'info');
+      } catch (error) {
+        console.error("Error clearing history:", error);
+      }
+    } else {
+      setHistory([]);
+      addLog('LOCAL HISTORY DATABASE PURGED', 'info');
+    }
   };
 
   useEffect(() => {
@@ -258,6 +341,17 @@ export default function App() {
                   ? { ...entry, status: 'COMPLETED', count: targetCount } 
                   : entry
               ));
+              
+              const entryToUpdate = history.find(e => e.id === currentHistoryId);
+              if (entryToUpdate) {
+                updateDoc(doc(db, 'history', currentHistoryId), {
+                  status: 'COMPLETED',
+                  count: targetCount,
+                  sessionId,
+                  phoneNumber: entryToUpdate.phoneNumber,
+                  timestamp: entryToUpdate.timestamp
+                }).catch(console.error);
+              }
             }
             addLog('ATTACK COMPLETED', 'success');
             return targetCount;
@@ -560,36 +654,15 @@ export default function App() {
                   </div>
 
                   <form onSubmit={handleAdminLogin} className="space-y-6">
-                    <div>
-                      <label className="block text-[10px] uppercase mb-2 opacity-60">Security Key</label>
-                      <div className="relative">
-                        <Key className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 opacity-40" />
-                        <input 
-                          type={showPassword ? "text" : "password"}
-                          placeholder="ENTER ADMIN PASSWORD"
-                          value={adminPassword}
-                          onChange={(e) => setAdminPassword(e.target.value)}
-                          className="w-full bg-black border border-[#00ff41]/30 rounded-lg py-3 pl-10 pr-12 focus:outline-none focus:border-[#00ff41] transition-colors placeholder:opacity-20"
-                        />
-                        <button 
-                          type="button"
-                          onClick={() => setShowPassword(!showPassword)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 opacity-40 hover:opacity-100"
-                        >
-                          {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                        </button>
-                      </div>
-                      {loginError && <p className="text-red-500 text-[10px] mt-2 font-bold uppercase">{loginError}</p>}
-                    </div>
-
                     <button 
                       type="submit"
                       disabled={isAuthenticating}
                       className="w-full bg-[#00ff41] text-black font-bold py-4 rounded-lg flex items-center justify-center gap-2 hover:bg-[#00cc34] transition-all"
                     >
                       {isAuthenticating ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Unlock className="w-4 h-4" />}
-                      {isAuthenticating ? "VERIFYING..." : "UNLOCK PANEL"}
+                      {isAuthenticating ? "VERIFYING..." : "LOGIN WITH GOOGLE"}
                     </button>
+                    {loginError && <p className="text-red-500 text-[10px] mt-2 font-bold uppercase text-center">{loginError}</p>}
                   </form>
                 </div>
               ) : (
@@ -619,13 +692,13 @@ export default function App() {
                     </div>
 
                     <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2 scrollbar-hide">
-                      {history.length === 0 ? (
+                      {globalHistory.length === 0 ? (
                         <div className="py-20 flex flex-col items-center justify-center opacity-20">
                           <Clock className="w-12 h-12 mb-4" />
                           <p className="uppercase tracking-widest text-xs">No Records Found</p>
                         </div>
                       ) : (
-                        history.map((entry) => (
+                        globalHistory.map((entry) => (
                           <div key={entry.id} className="bg-black/40 border border-[#00ff41]/10 rounded-lg p-4 flex items-center justify-between group hover:border-[#00ff41]/30 transition-all">
                             <div className="flex items-center gap-4">
                               <div className={`p-2 rounded-lg ${
@@ -636,8 +709,8 @@ export default function App() {
                                 <Phone className="w-4 h-4" />
                               </div>
                               <div>
-                                <h4 className="text-sm font-bold text-[#00ff41]">{entry.phoneNumber}</h4>
-                                <p className="text-[10px] opacity-40">{entry.timestamp}</p>
+                                <h4 className="text-sm font-bold text-[#00ff41]">+91 {entry.phoneNumber}</h4>
+                                <p className="text-[10px] opacity-40">{new Date(entry.timestamp).toLocaleString()}</p>
                               </div>
                             </div>
                             <div className="text-right">
@@ -659,13 +732,13 @@ export default function App() {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="bg-[#111] border border-[#00ff41]/20 rounded-xl p-4">
                       <p className="text-[10px] opacity-50 uppercase mb-1">Total Operations</p>
-                      <p className="text-2xl font-bold">{history.length}</p>
+                      <p className="text-2xl font-bold">{globalHistory.length}</p>
                     </div>
                     <div className="bg-[#111] border border-[#00ff41]/20 rounded-xl p-4">
                       <p className="text-[10px] opacity-50 uppercase mb-1">Success Rate</p>
                       <p className="text-2xl font-bold">
-                        {history.length > 0 
-                          ? Math.round((history.filter(h => h.status === 'COMPLETED').length / history.length) * 100) 
+                        {globalHistory.length > 0 
+                          ? Math.round((globalHistory.filter(h => h.status === 'COMPLETED').length / globalHistory.length) * 100) 
                           : 0}%
                       </p>
                     </div>

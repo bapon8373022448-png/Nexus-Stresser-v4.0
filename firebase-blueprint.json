@@ -1,0 +1,41 @@
+{
+  "entities": {
+    "HistoryEntry": {
+      "title": "HistoryEntry",
+      "description": "A record of a bombing attack attempt",
+      "type": "object",
+      "properties": {
+        "phoneNumber": {
+          "type": "string",
+          "description": "The target phone number"
+        },
+        "timestamp": {
+          "type": "string",
+          "description": "The time the attack was initiated"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["COMPLETED", "ABORTED", "IN_PROGRESS"],
+          "description": "The status of the attack"
+        },
+        "count": {
+          "type": "number",
+          "description": "The number of messages sent"
+        },
+        "userAgent": {
+          "type": "string",
+          "description": "The user agent of the client"
+        }
+      },
+      "required": ["phoneNumber", "timestamp", "status", "count"]
+    }
+  },
+  "firestore": {
+    "/history/{historyId}": {
+      "schema": {
+        "$ref": "#/entities/HistoryEntry"
+      },
+      "description": "Stores all attack history across all users"
+    }
+  }
+}

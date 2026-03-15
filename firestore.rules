@@ -1,0 +1,72 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: history
+    // Document ID: auto-generated
+    // Fields:
+    //   - phoneNumber: string (required, length 10) - The target phone number
+    //   - timestamp: string (required) - The time the attack was initiated
+    //   - status: string (required, enum: ['COMPLETED', 'ABORTED', 'IN_PROGRESS']) - The status of the attack
+    //   - count: number (required, >= 0) - The number of messages sent
+    //   - sessionId: string (required, length > 10) - A unique session ID for the user
+    //   - userAgent: string (optional) - The user agent of the client
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    // Check if the user is authenticated
+    function isAuthenticated() {
+       return request.auth != null;
+    }
+    
+    // Check if the user is the admin
+    function isAdmin() {
+      return isAuthenticated() && request.auth.token.email == "bapon8373022448@gmail.com" && request.auth.token.email_verified == true;
+    }
+
+    // Validate required fields exist
+    function hasRequiredFields(fields) {
+       return request.resource.data.keys().hasAll(fields);
+    }
+
+    // Domain Validator for HistoryEntry
+    function isValidHistoryEntry(data) {
+      let validStatuses = ['COMPLETED', 'ABORTED', 'IN_PROGRESS'];
+      return hasRequiredFields(['phoneNumber', 'timestamp', 'status', 'count', 'sessionId']) &&
+             data.phoneNumber is string && data.phoneNumber.size() == 10 &&
+             data.timestamp is string && data.timestamp.size() < 100 &&
+             data.status in validStatuses &&
+             data.count is number && data.count >= 0 &&
+             data.sessionId is string && data.sessionId.size() > 10 && data.sessionId.size() < 100 &&
+             (!('userAgent' in data) || (data.userAgent is string && data.userAgent.size() < 500));
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /history/{historyId} {
+      // Allow anyone to create a history entry
+      allow create: if isValidHistoryEntry(request.resource.data);
+      
+      // Allow update if admin, OR if unauthenticated user provides the correct sessionId and doesn't change immutable fields
+      allow update: if isValidHistoryEntry(request.resource.data) && (
+        isAdmin() || 
+        (request.resource.data.sessionId == resource.data.sessionId && 
+         request.resource.data.phoneNumber == resource.data.phoneNumber &&
+         request.resource.data.timestamp == resource.data.timestamp)
+      );
+      
+      // Only admin can read or delete history entries
+      allow read, delete: if isAdmin();
+    }
+  }
+}
