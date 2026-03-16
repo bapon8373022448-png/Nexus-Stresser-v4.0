@@ -41,6 +41,13 @@ interface LogEntry {
   timestamp: string;
   message: string;
   type: 'info' | 'success' | 'warning' | 'error';
+  category?: 'NETWORK' | 'SYSTEM' | 'SECURITY' | 'GATEWAY';
+}
+
+interface Notification {
+  id: string;
+  message: string;
+  type: 'info' | 'success' | 'warning' | 'error';
 }
 
 interface HistoryEntry {
@@ -83,7 +90,16 @@ export default function App() {
   const [isTranscribing, setIsTranscribing] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
   const logEndRef = useRef<HTMLDivElement>(null);
+
+  const addNotification = (message: string, type: Notification['type'] = 'info') => {
+    const id = Math.random().toString(36).substr(2, 9);
+    setNotifications(prev => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setNotifications(prev => prev.filter(n => n.id !== id));
+    }, 3000);
+  };
 
   // Load history from localStorage
   useEffect(() => {
@@ -142,15 +158,17 @@ export default function App() {
       const provider = new GoogleAuthProvider();
       const result = await signInWithPopup(auth, provider);
       if (result.user.email === 'bapon8373022448@gmail.com') {
-        addLog('ADMIN ACCESS GRANTED', 'success');
+        addLog('ADMIN ACCESS GRANTED', 'success', 'SECURITY');
+        addNotification('ADMIN ACCESS GRANTED', 'success');
       } else {
         await signOut(auth);
         setLoginError('UNAUTHORIZED EMAIL ADDRESS');
-        addLog('UNAUTHORIZED ADMIN ACCESS ATTEMPT', 'error');
+        addLog('UNAUTHORIZED ADMIN ACCESS ATTEMPT', 'error', 'SECURITY');
+        addNotification('UNAUTHORIZED ACCESS', 'error');
       }
     } catch (error: any) {
       setLoginError(error.message || 'AUTHENTICATION FAILED');
-      addLog('ADMIN AUTHENTICATION ERROR', 'error');
+      addLog('ADMIN AUTHENTICATION ERROR', 'error', 'SECURITY');
     } finally {
       setIsAuthenticating(false);
     }
@@ -158,14 +176,16 @@ export default function App() {
 
   const handleLogout = async () => {
     await signOut(auth);
-    addLog('ADMIN SESSION TERMINATED', 'warning');
+    addLog('ADMIN SESSION TERMINATED', 'warning', 'SECURITY');
+    addNotification('ADMIN LOGGED OUT', 'info');
   };
 
   const handleBoot = async () => {
     setIsBooted(true);
     await generateWelcomeVoice();
-    addLog('SYSTEM INITIALIZED: NEXUS STRESSER V4.0', 'success');
-    addLog('WELCOME SIR. AWAITING COMMANDS.', 'info');
+    addLog('SYSTEM INITIALIZED: NEXUS STRESSER V4.0', 'success', 'SYSTEM');
+    addLog('WELCOME SIR. AWAITING COMMANDS.', 'info', 'SYSTEM');
+    addNotification('SYSTEM ONLINE', 'success');
   };
 
   const startRecording = async () => {
@@ -225,14 +245,15 @@ export default function App() {
     }
   };
 
-  const addLog = (message: string, type: LogEntry['type'] = 'info') => {
+  const addLog = (message: string, type: LogEntry['type'] = 'info', category: LogEntry['category'] = 'SYSTEM') => {
     const newLog: LogEntry = {
       id: Math.random().toString(36).substr(2, 9),
       timestamp: new Date().toLocaleTimeString(),
       message,
-      type
+      type,
+      category
     };
-    setLogs(prev => [...prev.slice(-19), newLog]);
+    setLogs(prev => [...prev.slice(-49), newLog]);
   };
 
   useEffect(() => {
@@ -264,9 +285,10 @@ export default function App() {
     setProgress(0);
     setCount(0);
     setLogs([]);
-    addLog(`INITIALIZING ATTACK VECTOR: +91 ${phoneNumber}`, 'warning');
-    addLog('BYPASSING FIREWALL PROTOCOLS...', 'info');
-    addLog('ESTABLISHING SECURE TUNNEL...', 'success');
+    addLog(`INITIALIZING ATTACK VECTOR: +91 ${phoneNumber}`, 'warning', 'NETWORK');
+    addLog('BYPASSING FIREWALL PROTOCOLS...', 'info', 'SECURITY');
+    addLog('ESTABLISHING SECURE TUNNEL...', 'success', 'NETWORK');
+    addNotification('ATTACK INITIALIZED', 'warning');
     
     // Save to Firestore
     try {
@@ -301,7 +323,8 @@ export default function App() {
         console.error("Error updating Firestore:", error);
       }
     }
-    addLog('PROCESS TERMINATED BY USER', 'warning');
+    addLog('PROCESS TERMINATED BY USER', 'warning', 'SYSTEM');
+    addNotification('ATTACK ABORTED', 'error');
   };
 
   const clearHistory = async () => {
@@ -330,7 +353,11 @@ export default function App() {
           const services = ['Amazon', 'Flipkart', 'Uber', 'Zomato', 'Swiggy', 'Ola', 'Byjus', 'Unacademy', 'Snapdeal', 'Lenskart'];
           const service = services[Math.floor(Math.random() * services.length)];
           
-          addLog(`OTP REQUEST SENT VIA ${service.toUpperCase()} GATEWAY`, 'success');
+          // Detailed logging sequence
+          setTimeout(() => addLog(`RESOLVING GATEWAY: ${service.toUpperCase()}`, 'info', 'NETWORK'), 0);
+          setTimeout(() => addLog(`HANDSHAKE SUCCESSFUL: ${service.toUpperCase()}`, 'success', 'GATEWAY'), 200);
+          setTimeout(() => addLog(`OTP PACKET DELIVERED TO +91 ${phoneNumber}`, 'success', 'GATEWAY'), 400);
+          
           setProgress((next / targetCount) * 100);
           
           if (next >= targetCount) {
@@ -353,18 +380,22 @@ export default function App() {
                 }).catch(console.error);
               }
             }
-            addLog('ATTACK COMPLETED', 'success');
+            addLog('ATTACK COMPLETED: ALL PACKETS DELIVERED', 'success', 'SYSTEM');
+            addNotification('ATTACK SUCCESSFUL', 'success');
             return targetCount;
           }
           return next;
         });
-      }, 800);
+      }, 1200); // Slightly slower for readability of detailed logs
     }
     return () => clearInterval(interval);
-  }, [isBombing, count, targetCount, currentHistoryId]);
+  }, [isBombing, count, targetCount, currentHistoryId, phoneNumber]);
 
   return (
-    <div className="min-h-screen bg-[#050505] text-[#00ff41] font-mono selection:bg-[#00ff41] selection:text-black p-4 md:p-8 flex flex-col items-center justify-center overflow-hidden">
+    <div className="min-h-screen bg-[#050505] text-[#00ff41] font-mono selection:bg-[#00ff41] selection:text-black p-4 md:p-8 flex flex-col items-center justify-center overflow-hidden relative">
+      <div className="crt-overlay" />
+      <div className="scanline" />
+      
       <AnimatePresence>
         {!isBooted && (
           <motion.div 
@@ -393,7 +424,7 @@ export default function App() {
               </div>
             </motion.div>
 
-            <h1 className="text-4xl md:text-6xl font-bold tracking-tighter uppercase mb-4 text-shadow-[0_0_20px_#00ff41]">
+            <h1 className="text-4xl md:text-6xl font-bold tracking-tighter uppercase mb-4 text-shadow-[0_0_20px_#00ff41] glitch-text" data-text="Nexus Stresser">
               Nexus Stresser
             </h1>
             <p className="text-xs md:text-sm opacity-60 uppercase tracking-[0.5em] mb-12">
@@ -436,13 +467,13 @@ export default function App() {
         className="w-full max-w-4xl z-10"
       >
         {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 border-b border-[#00ff41]/30 pb-4 gap-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 border-b border-[#00ff41]/30 pb-4 gap-4 relative">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-[#00ff41]/10 rounded-lg border border-[#00ff41]/30">
+            <div className="p-2 bg-[#00ff41]/10 rounded-lg border border-[#00ff41]/30 shadow-[0_0_15px_rgba(0,255,65,0.2)]">
               <Zap className="w-6 h-6 animate-pulse" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold tracking-tighter uppercase">Nexus Stresser v4.0</h1>
+              <h1 className="text-2xl font-bold tracking-tighter uppercase glitch-text" data-text="Nexus Stresser v4.0">Nexus Stresser v4.0</h1>
               <p className="text-[10px] opacity-60 uppercase tracking-widest">Advanced Signal Penetration Interface</p>
             </div>
           </div>
@@ -480,7 +511,7 @@ export default function App() {
             >
               {/* Controls Panel */}
               <div className="lg:col-span-1 space-y-6">
-                <div className="bg-[#111] border border-[#00ff41]/20 rounded-xl p-6 shadow-[0_0_30px_rgba(0,255,65,0.05)]">
+                <div className="bg-[#111] border border-[#00ff41]/20 rounded-xl p-6 shadow-[0_0_30px_rgba(0,255,65,0.05)] cyber-border">
                   <div className="flex items-center gap-2 mb-6 text-xs uppercase font-bold opacity-80">
                     <Terminal className="w-4 h-4" />
                     Target Configuration
@@ -562,7 +593,7 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="bg-[#111] border border-[#00ff41]/20 rounded-xl p-6">
+                <div className="bg-[#111] border border-[#00ff41]/20 rounded-xl p-6 cyber-border">
                   <div className="flex items-center gap-2 mb-4 text-xs uppercase font-bold opacity-80">
                     <Activity className="w-4 h-4" />
                     System Status
@@ -577,7 +608,7 @@ export default function App() {
 
               {/* Terminal Panel */}
               <div className="lg:col-span-2 flex flex-col h-[500px] lg:h-auto">
-                <div className="flex-1 bg-black border border-[#00ff41]/20 rounded-xl overflow-hidden flex flex-col shadow-[inset_0_0_50px_rgba(0,255,65,0.05)]">
+                <div className="flex-1 bg-black border border-[#00ff41]/20 rounded-xl overflow-hidden flex flex-col shadow-[inset_0_0_50px_rgba(0,255,65,0.05)] cyber-border">
                   <div className="bg-[#111] px-4 py-2 border-b border-[#00ff41]/20 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <div className="flex gap-1.5">
@@ -603,14 +634,22 @@ export default function App() {
                           key={log.id}
                           initial={{ opacity: 0, x: -10 }}
                           animate={{ opacity: 1, x: 0 }}
-                          className={`text-[11px] flex gap-3 ${
+                          className={`text-[11px] flex gap-3 py-0.5 border-b border-[#00ff41]/5 last:border-0 ${
                             log.type === 'success' ? 'text-[#00ff41]' :
                             log.type === 'warning' ? 'text-yellow-400' :
                             log.type === 'error' ? 'text-red-500' :
                             'text-[#00ff41]/60'
                           }`}
                         >
-                          <span className="opacity-30 shrink-0">[{log.timestamp}]</span>
+                          <span className="opacity-30 shrink-0 font-mono">[{log.timestamp}]</span>
+                          <span className={`shrink-0 font-bold px-1 rounded text-[9px] ${
+                            log.category === 'NETWORK' ? 'bg-blue-500/20 text-blue-400' :
+                            log.category === 'SECURITY' ? 'bg-red-500/20 text-red-400' :
+                            log.category === 'GATEWAY' ? 'bg-purple-500/20 text-purple-400' :
+                            'bg-[#00ff41]/10 text-[#00ff41]/60'
+                          }`}>
+                            {log.category}
+                          </span>
                           <span className="break-all">{log.message}</span>
                         </motion.div>
                       ))}
@@ -644,7 +683,7 @@ export default function App() {
               className="w-full max-w-2xl mx-auto"
             >
               {!isAdminAuthorized ? (
-                <div className="bg-[#111] border border-[#00ff41]/30 rounded-2xl p-8 shadow-2xl">
+                <div className="bg-[#111] border border-[#00ff41]/30 rounded-2xl p-8 shadow-2xl cyber-border">
                   <div className="flex flex-col items-center mb-8">
                     <div className="p-4 bg-[#00ff41]/10 rounded-full border border-[#00ff41]/30 mb-4">
                       <Lock className="w-10 h-10 text-[#00ff41]" />
@@ -667,7 +706,7 @@ export default function App() {
                 </div>
               ) : (
                 <div className="space-y-6">
-                  <div className="bg-[#111] border border-[#00ff41]/30 rounded-2xl p-6">
+                  <div className="bg-[#111] border border-[#00ff41]/30 rounded-2xl p-6 cyber-border">
                     <div className="flex items-center justify-between mb-6">
                       <div className="flex items-center gap-2 text-sm font-bold uppercase">
                         <History className="w-5 h-5" />
@@ -763,6 +802,34 @@ export default function App() {
       <div className="fixed top-4 right-4 w-12 h-12 border-t-2 border-r-2 border-[#00ff41]/20" />
       <div className="fixed bottom-4 left-4 w-12 h-12 border-b-2 border-l-2 border-[#00ff41]/20" />
       <div className="fixed bottom-4 right-4 w-12 h-12 border-b-2 border-r-2 border-[#00ff41]/20" />
+
+      {/* Notifications Overlay */}
+      <div className="fixed top-24 right-8 z-[110] flex flex-col gap-3 pointer-events-none">
+        <AnimatePresence>
+          {notifications.map((n) => (
+            <motion.div
+              key={n.id}
+              initial={{ opacity: 0, x: 50, scale: 0.9 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, x: 20, scale: 0.9 }}
+              className={`px-6 py-3 rounded-lg border shadow-2xl flex items-center gap-3 backdrop-blur-md ${
+                n.type === 'success' ? 'bg-green-500/20 border-green-500/50 text-green-400' :
+                n.type === 'error' ? 'bg-red-500/20 border-red-500/50 text-red-400' :
+                n.type === 'warning' ? 'bg-yellow-500/20 border-yellow-500/50 text-yellow-400' :
+                'bg-[#111]/80 border-[#00ff41]/30 text-[#00ff41]'
+              }`}
+            >
+              <div className={`w-2 h-2 rounded-full animate-pulse ${
+                n.type === 'success' ? 'bg-green-400' :
+                n.type === 'error' ? 'bg-red-400' :
+                n.type === 'warning' ? 'bg-yellow-400' :
+                'bg-[#00ff41]'
+              }`} />
+              <span className="text-xs font-bold uppercase tracking-widest">{n.message}</span>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
     </div>
   );
 }
