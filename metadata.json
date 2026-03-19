@@ -1,5 +1,5 @@
 {
   "name": "Nexus Stresser",
   "description": "A high-tech signal stress testing and notification simulation tool with a professional hacker aesthetic.",
-  "requestFramePermissions": []
+  "requestFramePermissions": ["microphone"]
 }

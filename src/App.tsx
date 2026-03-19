@@ -28,7 +28,9 @@ import {
   LogOut,
   Mic,
   MicOff,
-  Volume2
+  Volume2,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { generateWelcomeVoice, transcribeAudio } from './services/gemini';
@@ -62,7 +64,7 @@ interface HistoryEntry {
 
 export default function App() {
   const [isBooted, setIsBooted] = useState(false);
-  const [activeTab, setActiveTab] = useState<'stresser' | 'admin'>('stresser');
+  const [activeTab, setActiveTab] = useState<'stresser' | 'admin' | 'settings'>('stresser');
   const [isAdminAuthorized, setIsAdminAuthorized] = useState(false);
   const [adminUser, setAdminUser] = useState<any>(null);
   const [loginError, setLoginError] = useState('');
@@ -84,6 +86,10 @@ export default function App() {
   const [progress, setProgress] = useState(0);
   const [count, setCount] = useState(0);
   const [targetCount, setTargetCount] = useState(50);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [latency, setLatency] = useState(1200);
+  const [packetLoss, setPacketLoss] = useState(0);
+  const [customUserAgent, setCustomUserAgent] = useState('Nexus-Protocol/4.0');
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [currentHistoryId, setCurrentHistoryId] = useState<string | null>(null);
   const [isRecording, setIsRecording] = useState(false);
@@ -92,6 +98,18 @@ export default function App() {
   const audioChunksRef = useRef<Blob[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const logEndRef = useRef<HTMLDivElement>(null);
+  const [cpuLoad, setCpuLoad] = useState(42);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCpuLoad(prev => {
+        const change = Math.floor(Math.random() * 7) - 3;
+        const newLoad = prev + change;
+        return Math.min(Math.max(newLoad, 15), 85);
+      });
+    }, 1500);
+    return () => clearInterval(interval);
+  }, []);
 
   const addNotification = (message: string, type: Notification['type'] = 'info') => {
     const id = Math.random().toString(36).substr(2, 9);
@@ -276,7 +294,7 @@ export default function App() {
       status: 'IN_PROGRESS',
       count: 0,
       sessionId,
-      userAgent: navigator.userAgent
+      userAgent: customUserAgent
     };
 
     setHistory(prev => [newEntry, ...prev].slice(0, 50));
@@ -353,10 +371,17 @@ export default function App() {
           const services = ['Amazon', 'Flipkart', 'Uber', 'Zomato', 'Swiggy', 'Ola', 'Byjus', 'Unacademy', 'Snapdeal', 'Lenskart'];
           const service = services[Math.floor(Math.random() * services.length)];
           
-          // Detailed logging sequence
-          setTimeout(() => addLog(`RESOLVING GATEWAY: ${service.toUpperCase()}`, 'info', 'NETWORK'), 0);
-          setTimeout(() => addLog(`HANDSHAKE SUCCESSFUL: ${service.toUpperCase()}`, 'success', 'GATEWAY'), 200);
-          setTimeout(() => addLog(`OTP PACKET DELIVERED TO +91 ${phoneNumber}`, 'success', 'GATEWAY'), 400);
+          const isLost = Math.random() * 100 < packetLoss;
+
+          if (isLost) {
+            setTimeout(() => addLog(`RESOLVING GATEWAY: ${service.toUpperCase()}`, 'info', 'NETWORK'), 0);
+            setTimeout(() => addLog(`CONNECTION TIMEOUT: PACKET LOSS AT ${service.toUpperCase()}`, 'error', 'NETWORK'), 200);
+          } else {
+            // Detailed logging sequence
+            setTimeout(() => addLog(`RESOLVING GATEWAY: ${service.toUpperCase()}`, 'info', 'NETWORK'), 0);
+            setTimeout(() => addLog(`HANDSHAKE SUCCESSFUL: ${service.toUpperCase()}`, 'success', 'GATEWAY'), 200);
+            setTimeout(() => addLog(`OTP PACKET DELIVERED TO +91 ${phoneNumber}`, 'success', 'GATEWAY'), 400);
+          }
           
           setProgress((next / targetCount) * 100);
           
@@ -386,10 +411,10 @@ export default function App() {
           }
           return next;
         });
-      }, 1200); // Slightly slower for readability of detailed logs
+      }, latency); 
     }
     return () => clearInterval(interval);
-  }, [isBombing, count, targetCount, currentHistoryId, phoneNumber]);
+  }, [isBombing, count, targetCount, currentHistoryId, phoneNumber, latency, packetLoss]);
 
   return (
     <div className="min-h-screen bg-[#050505] text-[#00ff41] font-mono selection:bg-[#00ff41] selection:text-black p-4 md:p-8 flex flex-col items-center justify-center overflow-hidden relative">
@@ -497,6 +522,15 @@ export default function App() {
               <Shield className="w-3 h-3" />
               Admin Panel
             </button>
+            <button 
+              onClick={() => setActiveTab('settings')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-md text-[10px] uppercase font-bold transition-all ${
+                activeTab === 'settings' ? 'bg-[#00ff41] text-black shadow-[0_0_15px_rgba(0,255,65,0.3)]' : 'text-[#00ff41]/50 hover:text-[#00ff41]'
+              }`}
+            >
+              <Settings className="w-3 h-3" />
+              Settings
+            </button>
           </div>
         </div>
 
@@ -571,6 +605,67 @@ export default function App() {
                       />
                     </div>
 
+                    <div className="pt-2">
+                      <button 
+                        onClick={() => setShowAdvanced(!showAdvanced)}
+                        className="w-full flex items-center justify-between text-[10px] uppercase font-bold opacity-60 hover:opacity-100 transition-opacity"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Settings className="w-3 h-3" />
+                          Advanced Settings
+                        </div>
+                        {showAdvanced ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                      </button>
+
+                      <AnimatePresence>
+                        {showAdvanced && (
+                          <motion.div 
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            className="overflow-hidden space-y-4 pt-4"
+                          >
+                            <div>
+                              <label className="block text-[9px] uppercase mb-2 opacity-50">Latency Simulation: {latency}ms</label>
+                              <input 
+                                type="range"
+                                min="200"
+                                max="5000"
+                                step="100"
+                                value={latency}
+                                onChange={(e) => setLatency(parseInt(e.target.value))}
+                                disabled={isBombing}
+                                className="w-full accent-[#00ff41] bg-black h-1 rounded-lg appearance-none cursor-pointer"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[9px] uppercase mb-2 opacity-50">Packet Loss: {packetLoss}%</label>
+                              <input 
+                                type="range"
+                                min="0"
+                                max="90"
+                                step="5"
+                                value={packetLoss}
+                                onChange={(e) => setPacketLoss(parseInt(e.target.value))}
+                                disabled={isBombing}
+                                className="w-full accent-[#00ff41] bg-black h-1 rounded-lg appearance-none cursor-pointer"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[9px] uppercase mb-2 opacity-50">Custom User Agent</label>
+                              <input 
+                                type="text"
+                                value={customUserAgent}
+                                onChange={(e) => setCustomUserAgent(e.target.value)}
+                                disabled={isBombing}
+                                className="w-full bg-black border border-[#00ff41]/20 rounded-lg py-2 px-3 text-[10px] focus:outline-none focus:border-[#00ff41] transition-colors"
+                              />
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+
                     <div className="pt-4">
                       {!isBombing ? (
                         <button 
@@ -599,9 +694,24 @@ export default function App() {
                     System Status
                   </div>
                   <div className="space-y-3">
-                    <StatusItem label="CPU Load" value="42%" icon={<Cpu className="w-3 h-3" />} />
-                    <StatusItem label="Encryption" value="AES-256" icon={<Lock className="w-3 h-3" />} />
-                    <StatusItem label="Gateways" value="14 Active" icon={<Wifi className="w-3 h-3" />} />
+                    <StatusItem 
+                      label="CPU Load" 
+                      value={`${cpuLoad}%`} 
+                      icon={<Cpu className="w-3 h-3" />} 
+                      status={cpuLoad > 75 ? 'warning' : 'normal'} 
+                    />
+                    <StatusItem 
+                      label="Encryption" 
+                      value="AES-256" 
+                      icon={<Lock className="w-3 h-3" />} 
+                      status="normal" 
+                    />
+                    <StatusItem 
+                      label="Gateways" 
+                      value="14 Active" 
+                      icon={<Wifi className="w-3 h-3" />} 
+                      status="normal" 
+                    />
                   </div>
                 </div>
               </div>
@@ -786,6 +896,81 @@ export default function App() {
               )}
             </motion.div>
           )}
+
+          {activeTab === 'settings' && (
+            <motion.div
+              key="settings-tab"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              className="w-full max-w-2xl mx-auto"
+            >
+              <div className="space-y-6">
+                <div className="bg-[#111] border border-[#00ff41]/30 rounded-2xl p-6 cyber-border">
+                  <div className="flex items-center justify-between mb-6">
+                    <div className="flex items-center gap-2 text-sm font-bold uppercase">
+                      <Settings className="w-5 h-5" />
+                      API Key Management
+                    </div>
+                  </div>
+
+                  <div className="space-y-6">
+                    <div className="p-4 bg-black/50 border border-[#00ff41]/20 rounded-lg">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2 text-xs uppercase font-bold">
+                          <Key className="w-4 h-4" />
+                          External Gateway API Key
+                        </div>
+                        <div className={`text-[10px] uppercase font-bold px-2 py-1 rounded ${(import.meta as any).env.VITE_EXTERNAL_GATEWAY_KEY ? 'bg-green-500/20 text-green-500' : 'bg-red-500/20 text-red-500'}`}>
+                          {(import.meta as any).env.VITE_EXTERNAL_GATEWAY_KEY ? 'Connected' : 'Disconnected'}
+                        </div>
+                      </div>
+                      <p className="text-[10px] opacity-60 leading-relaxed mb-4">
+                        Required for connecting to external SMS/Call gateways for live network penetration testing.
+                      </p>
+                      {!(import.meta as any).env.VITE_EXTERNAL_GATEWAY_KEY && (
+                        <div className="text-[10px] bg-[#00ff41]/5 border border-[#00ff41]/20 p-3 rounded text-[#00ff41]/80">
+                          To configure this key:
+                          <ol className="list-decimal ml-4 mt-2 space-y-1">
+                            <li>Open the <strong>Settings</strong> (⚙️ gear icon, top-right corner)</li>
+                            <li>Select <strong>Secrets</strong></li>
+                            <li>Add a new secret named <code>VITE_EXTERNAL_GATEWAY_KEY</code></li>
+                            <li>Paste your API key and press Enter</li>
+                          </ol>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="p-4 bg-black/50 border border-[#00ff41]/20 rounded-lg">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2 text-xs uppercase font-bold">
+                          <Wifi className="w-4 h-4" />
+                          Proxy Network API Key
+                        </div>
+                        <div className={`text-[10px] uppercase font-bold px-2 py-1 rounded ${(import.meta as any).env.VITE_PROXY_NETWORK_KEY ? 'bg-green-500/20 text-green-500' : 'bg-red-500/20 text-red-500'}`}>
+                          {(import.meta as any).env.VITE_PROXY_NETWORK_KEY ? 'Connected' : 'Disconnected'}
+                        </div>
+                      </div>
+                      <p className="text-[10px] opacity-60 leading-relaxed mb-4">
+                        Required for advanced proxy network routing to obfuscate origin signals.
+                      </p>
+                      {!(import.meta as any).env.VITE_PROXY_NETWORK_KEY && (
+                        <div className="text-[10px] bg-[#00ff41]/5 border border-[#00ff41]/20 p-3 rounded text-[#00ff41]/80">
+                          To configure this key:
+                          <ol className="list-decimal ml-4 mt-2 space-y-1">
+                            <li>Open the <strong>Settings</strong> (⚙️ gear icon, top-right corner)</li>
+                            <li>Select <strong>Secrets</strong></li>
+                            <li>Add a new secret named <code>VITE_PROXY_NETWORK_KEY</code></li>
+                            <li>Paste your API key and press Enter</li>
+                          </ol>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
         </AnimatePresence>
 
         {/* Footer Warning */}
@@ -834,14 +1019,27 @@ export default function App() {
   );
 }
 
-function StatusItem({ label, value, icon }: { label: string, value: string, icon: React.ReactNode }) {
+function StatusItem({ label, value, icon, status = 'normal' }: { label: string, value: string, icon: React.ReactNode, status?: 'normal' | 'warning' | 'error' }) {
+  const colorClass = 
+    status === 'warning' ? 'bg-yellow-400 shadow-[0_0_5px_rgba(250,204,21,0.8)]' :
+    status === 'error' ? 'bg-red-500 shadow-[0_0_5px_rgba(239,68,68,0.8)]' :
+    'bg-[#00ff41] shadow-[0_0_5px_rgba(0,255,65,0.8)]';
+
+  const textColorClass = 
+    status === 'warning' ? 'text-yellow-400' :
+    status === 'error' ? 'text-red-500' :
+    'text-[#00ff41]';
+
   return (
     <div className="flex items-center justify-between text-[10px] uppercase">
       <div className="flex items-center gap-2 opacity-60">
         {icon}
         {label}
       </div>
-      <span className="font-bold">{value}</span>
+      <div className="flex items-center gap-2">
+        <span className={`font-bold ${textColorClass}`}>{value}</span>
+        <div className={`w-1.5 h-1.5 rounded-full animate-pulse ${colorClass}`} />
+      </div>
     </div>
   );
 }
